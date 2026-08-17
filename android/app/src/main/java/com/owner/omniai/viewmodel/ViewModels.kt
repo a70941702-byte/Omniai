@@ -149,7 +149,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun setControl(key: String, value: Any) = viewModelScope.launch {
         runCatching { repo.setControl(key, value) }
-            .onSuccess { runCatching { _controls.value = repo.controls() } }
+            .onSuccess { loadControls() }
             .onFailure { _toast.value = "Error: ${it.message}" }
     }
 
