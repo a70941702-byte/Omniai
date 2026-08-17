@@ -1,0 +1,8 @@
+#!/bin/sh
+# Minimal gradle bootstrap: downloads and runs gradle 8.9
+DIR=$(cd "$(dirname "$0")" && pwd)
+if [ ! -d "$DIR/.gradle-dist" ]; then
+  curl -sL https://services.gradle.org/distributions/gradle-8.9-bin.zip -o /tmp/g.zip
+  mkdir -p "$DIR/.gradle-dist" && unzip -q -o /tmp/g.zip -d "$DIR/.gradle-dist"
+fi
+exec "$DIR/.gradle-dist/gradle-8.9/bin/gradle" "$@"
