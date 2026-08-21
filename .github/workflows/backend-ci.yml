@@ -51,4 +51,11 @@ jobs:
           uvicorn app.main:app --host 127.0.0.1 --port 8000 > /tmp/omniai-ci.log 2>&1 &
           SERVER_PID=$!
           trap 'kill $SERVER_PID || true' EXIT
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8000/readyz >/dev/null; then
+              break
+            fi
+            sleep 1
+          done
+          curl -fsS http://127.0.0.1:8000/readyz >/dev/null || (cat /tmp/omniai-ci.log && exit 1)
           python scripts/load_smoke.py --base-url http://127.0.0.1:8000 --owner-token test-owner-token --requests 12 --concurrency 4
