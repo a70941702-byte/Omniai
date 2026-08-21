@@ -15,7 +15,7 @@ RUN pip install --upgrade pip && pip install -r requirements.txt
 
 COPY app ./app
 COPY tests ./tests
-COPY checkpoints ./checkpoints
+RUN mkdir -p ./checkpoints ./data
 
 EXPOSE 8000
 
