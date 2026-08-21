@@ -99,6 +99,19 @@ _SAFETY_REFUSAL = ("I can't help with that. This request is blocked by my safety
                    "(لا يمكنني المساعدة في هذا الطلب.)")
 
 
+def _contains_arabic(text: Optional[str]) -> bool:
+    return bool(text and re.search(r"[\u0600-\u06FF]", text))
+
+
+def _prefers_arabic(prompt: str, system_prompt: Optional[str] = None) -> bool:
+    sp = system_prompt or ""
+    return _contains_arabic(prompt) or _contains_arabic(sp) or bool(re.search(r"\barabic\b", sp, re.I))
+
+
+def _looks_like_coding(prompt: str) -> bool:
+    return bool(re.search(r"\b(python|git|code|bug|commit|branch|snippet|function|class|api|debug|stack trace)\b|بايثون|برمج|برمجة|كود|دالة|جيت|مستودع|ريبو", prompt, re.I))
+
+
 class Orchestrator:
     def __init__(self):
         self._stop = threading.Event()
@@ -116,8 +129,9 @@ class Orchestrator:
             return self._answer(prompt, model, intent_labels)["answer"]
         return responder
 
-    def _answer(self, prompt: str, model, intent_labels: list[str]) -> dict:
+    def _answer(self, prompt: str, model, intent_labels: list[str], system_prompt: Optional[str] = None) -> dict:
         p = prompt.lower()
+        prefers_arabic = _prefers_arabic(prompt, system_prompt)
 
         # 0) safety gate first
         if re.search(r"explosive|hack|private phone|disable the owner|bypass|اختراق|عطل نظام", p):
@@ -155,14 +169,19 @@ class Orchestrator:
         # 4) RAG: retrieved knowledge may answer
         hits = knowledge_base.retrieve(prompt, top_k=2)
         if hits and hits[0]["score"] > 0.25:
-            return {"answer": f"From my knowledge base: {hits[0]['text']}",
+            prefix = "من قاعدة معرفتي: " if prefers_arabic else "From my knowledge base: "
+            return {"answer": f"{prefix}{hits[0]['text']}",
                     "intent": "knowledge", "tool": "rag"}
 
         # 5) Real LLM generation when the registry points to an HF/GGUF model.
         # NeuralCore remains an optional router/classifier only.
         if llm_engine.loaded:
-            history = [{"role":"system","content":"You are OmniAI, a private owner-controlled assistant."}]
-            history.append({"role":"user","content":prompt})
+            default_system = (system_prompt or
+                              ("أنت OmniAI، مساعد شخصي خاص بصاحب النظام. أجب دائمًا بالعربية الفصحى الواضحة ما دام المستخدم يكتب بالعربية، وكن مساعدًا عامًا مفيدًا لا يقتصر على البرمجة."
+                               if prefers_arabic else
+                               "You are OmniAI, a private owner-controlled assistant. Reply in the user's language and behave as a helpful general assistant, not only a coding assistant."))
+            history = [{"role":"system","content": default_system},
+                       {"role":"user","content":prompt}]
             try:
                 return {"answer": llm_engine.generate(history, GenerationConfig()), "intent":"general","tool":None}
             except Exception as e:
@@ -174,23 +193,37 @@ class Orchestrator:
             idx = int(proba.argmax().item())
             if idx < len(intent_labels):
                 intent = intent_labels[idx]
-        memories = memory_store.recall(prompt, kinds=("episodic",), top_k=2)
-        mem_note = f" (I also remember: {memories[0]['text'][:80]})" if memories else ""
-        replies = {
-            "greeting": "Hello! I'm your personal AI. Ask me anything — math, code, reasoning, or facts.",
-            "math": "Give me an expression like `12 + 30` and I'll compute it exactly.",
-            "coding": "I can help with code. Ask about Python, git, or send me a snippet to analyze.",
-            "reasoning": "Let me think through it step by step — give me the full problem.",
-            "knowledge": "I don't have that fact stored yet. Add it to my knowledge base and I'll remember it.",
-            "tool_use": "Tell me which tool to use (calculator, git, tests) and the exact task.",
-            "memory": "Noted — I'll keep that in my memory.",
-            "language": "I can translate and handle grammar questions. What do you need?",
-        }
-        answer = replies.get(intent, replies["greeting"]) + mem_note
+        if intent == "coding" and not _looks_like_coding(prompt):
+            intent = "general"
+        if prefers_arabic:
+            replies = {
+                "general": "أنا OmniAI، مساعدك الشخصي. أستطيع مساعدتك في الشرح والأفكار والمعرفة والبرمجة والرياضيات، وسأرد بالعربية ما دمت تكتب بالعربية.",
+                "greeting": "مرحبًا! أنا OmniAI، مساعدك الشخصي. اسألني ما تريد وسأجيبك بالعربية بوضوح.",
+                "math": "أرسل العملية الحسابية مثل 12 + 30 وسأحسبها لك بدقة.",
+                "coding": "أستطيع مساعدتك في البرمجة. أرسل الكود أو الخطأ أو سؤالك، وسأجيبك بالعربية.",
+                "reasoning": "اشرح المسألة أو الفكرة بالتفصيل، وسأفكر فيها خطوة بخطوة بالعربية.",
+                "knowledge": "أستطيع مساعدتك بالمعلومات العامة وشرحها بالعربية. اسأل ما تريد.",
+                "tool_use": "اذكر الأداة أو المهمة المطلوبة، وسأوجّهك بالعربية إلى الطريقة المناسبة.",
+                "memory": "تم، سأحتفظ بهذه المعلومة ضمن ذاكرتي.",
+                "language": "أستطيع الترجمة وشرح القواعد وصياغة النصوص بالعربية. ماذا تريد؟",
+            }
+        else:
+            replies = {
+                "general": "I'm OmniAI, your personal assistant. I can help with ideas, facts, code, and reasoning.",
+                "greeting": "Hello! I'm your personal AI. Ask me anything — math, code, reasoning, or facts.",
+                "math": "Give me an expression like `12 + 30` and I'll compute it exactly.",
+                "coding": "I can help with code. Ask about Python, git, or send me a snippet to analyze.",
+                "reasoning": "Let me think through it step by step — give me the full problem.",
+                "knowledge": "I can help with general information and explanations. Ask your question.",
+                "tool_use": "Tell me which tool to use (calculator, git, tests) and the exact task.",
+                "memory": "Noted — I'll keep that in my memory.",
+                "language": "I can translate and handle grammar questions. What do you need?",
+            }
+        answer = replies.get(intent, replies["general"])
         return {"answer": answer, "intent": intent, "tool": None}
 
     # ---------------- public chat API --------------------------------------
-    def chat(self, conversation_id: str, text: str) -> dict:
+    def chat(self, conversation_id: str, text: str, system_prompt: Optional[str] = None) -> dict:
         controls = db.get_controls()
         current = registry.get_current_model()
         if not current:
@@ -201,7 +234,7 @@ class Orchestrator:
             else json.loads(current["intent_labels"])
 
         t0 = time.time()
-        result = self._answer(text, registry.load_model(current["id"]), labels)
+        result = self._answer(text, registry.load_model(current["id"]), labels, system_prompt)
         latency = time.time() - t0
         charge("inference_cpu", latency*0.01, {"model_id":current["id"]})
 

@@ -117,7 +117,7 @@ def chat(body: ChatIn, _=Depends(require_owner)):
                    " VALUES(?,?,?,?)", (cid, body.text[:60], db.now(), db.now()))
     elif not db.query_one("SELECT id FROM conversations WHERE id=?", (cid,)):
         raise HTTPException(404, "conversation not found")
-    return {"conversation_id": cid, **orchestrator.chat(cid, body.text)}
+    return {"conversation_id": cid, **orchestrator.chat(cid, body.text, body.system_prompt)}
 
 @router.post("/chat/stream")
 def chat_stream(body: ChatIn, _=Depends(require_owner)):
