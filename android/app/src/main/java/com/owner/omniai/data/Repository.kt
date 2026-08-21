@@ -13,7 +13,7 @@ import java.util.concurrent.TimeUnit
 class Repository(private val context:Context) {
  private val prefs = EncryptedSharedPreferences.create(context,"omniai_secure",MasterKey.Builder(context).setKeyScheme(MasterKey.KeyScheme.AES256_GCM).build(),EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM)
  var baseUrl:String
-  get()=prefs.getString("base_url","https://127.0.0.1:8000/api/v1/")!!
+  get()=prefs.getString("base_url","https://omniai-backend-opw5.onrender.com/api/v1/")!!
   set(v){prefs.edit().putString("base_url",v).apply()}
  private val api:OmniApi get(){
   val client=OkHttpClient.Builder().connectTimeout(30,TimeUnit.SECONDS).readTimeout(300,TimeUnit.SECONDS).writeTimeout(60,TimeUnit.SECONDS).addInterceptor(Interceptor { chain ->

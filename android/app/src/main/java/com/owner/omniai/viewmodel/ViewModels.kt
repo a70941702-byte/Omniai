@@ -11,6 +11,19 @@ import kotlinx.coroutines.launch
 class MainViewModel(app: Application) : AndroidViewModel(app) {
     val repo = Repository(app)
 
+    private fun normalizeServerUrl(raw: String): String {
+        var s = raw.trim().replace(" ", "")
+        if (s.startsWith("/http://") || s.startsWith("/https://")) s = s.removePrefix("/")
+        if (s.startsWith("https:/") && !s.startsWith("https://")) s = s.replaceFirst("https:/", "https://")
+        if (s.startsWith("http:/") && !s.startsWith("http://")) s = s.replaceFirst("http:/", "http://")
+        if (!s.startsWith("http://") && !s.startsWith("https://")) s = "https://$s"
+        s = s.removeSuffix("/")
+        if (!s.endsWith("/api/v1")) {
+            s = if (s.contains("/api/v1/")) s.substringBefore("/api/v1/") + "/api/v1" else "$s/api/v1"
+        }
+        return "$s/"
+    }
+
     // ---- auth ----
     private val _loggedIn = MutableStateFlow(repo.isLoggedIn)
     val loggedIn = _loggedIn.asStateFlow()
@@ -19,9 +32,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun login(token: String, serverUrl: String) = viewModelScope.launch {
         _loginError.value = null
-        repo.baseUrl = if (serverUrl.endsWith("/")) serverUrl else "$serverUrl/"
+        val cleanToken = token.trim()
+        val cleanServer = normalizeServerUrl(serverUrl)
+        repo.baseUrl = cleanServer
+        runCatching { repo.logout() }
         try {
-            _loggedIn.value = repo.login(token)
+            _loggedIn.value = repo.login(cleanToken)
             if (!_loggedIn.value) _loginError.value = "Invalid token"
         } catch (e: Exception) {
             _loginError.value = "Connection failed: ${e.message}"

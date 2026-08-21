@@ -21,6 +21,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextDirection
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.owner.omniai.data.Approval
@@ -31,7 +32,7 @@ import java.util.Locale
 @Composable
 fun LoginScreen(vm: MainViewModel = viewModel()) {
     var token by remember { mutableStateOf("") }
-    var server by remember { mutableStateOf("https://your-server.example.com/api/v1/") }
+    var server by remember { mutableStateOf(vm.repo.baseUrl) }
     val error by vm.loginError.collectAsState()
 
     Column(
@@ -43,14 +44,21 @@ fun LoginScreen(vm: MainViewModel = viewModel()) {
         Text("مساعدك الشخصي — أنت تملكه", color = MaterialTheme.colorScheme.onSurfaceVariant)
         Spacer(Modifier.height(32.dp))
         OutlinedTextField(
-            value = server, onValueChange = { server = it },
-            label = { Text("رابط الخادم (Server URL)") }, singleLine = true,
+            value = server,
+            onValueChange = { server = it },
+            label = { Text("رابط الخادم (Server URL)") },
+            placeholder = { Text("https://omniai-backend-opw5.onrender.com/api/v1/") },
+            singleLine = true,
+            textStyle = LocalTextStyle.current.copy(textDirection = TextDirection.Ltr),
             modifier = Modifier.fillMaxWidth()
         )
         Spacer(Modifier.height(12.dp))
         OutlinedTextField(
-            value = token, onValueChange = { token = it },
-            label = { Text("رمز المالك (Owner Token)") }, singleLine = true,
+            value = token,
+            onValueChange = { token = it },
+            label = { Text("رمز المالك (Owner Token)") },
+            singleLine = true,
+            textStyle = LocalTextStyle.current.copy(textDirection = TextDirection.Ltr),
             modifier = Modifier.fillMaxWidth()
         )
         error?.let {
