@@ -248,9 +248,13 @@ fun SystemScreen(vm: MainViewModel) {
     val models by vm.models.collectAsState()
     val cycles by vm.cycles.collectAsState()
     val toast by vm.toast.collectAsState()
+    val latestBundle by vm.latestBundle.collectAsState()
+    val latestBundleVerification by vm.latestBundleVerification.collectAsState()
+    val lastEmergencyBundle by vm.lastEmergencyBundle.collectAsState()
+    val lastEmergencyBundleVerification by vm.lastEmergencyBundleVerification.collectAsState()
     val snackbar = remember { SnackbarHostState() }
 
-    LaunchedEffect(Unit) { vm.refreshSystem() }
+    LaunchedEffect(Unit) { vm.refreshSystem(); vm.refreshBundles() }
     LaunchedEffect(toast) { toast?.let { snackbar.showSnackbar(it); vm.clearToast() } }
 
     Scaffold(
@@ -270,6 +274,15 @@ fun SystemScreen(vm: MainViewModel) {
                             Text("حلقة التدريب: ${if (s.training_thread_alive) "تعمل" else "متوقفة"}")
                             Text("النماذج: ${s.counts["models"]}  •  الذكريات: ${s.counts["memories"]}  •  " +
                                  "الدورات: ${s.counts["cycles"]}  •  موافقات معلقة: ${s.counts["pending_approvals"]}")
+                            Text("الحالة التشغيلية: ${if (s.runtime_loaded == true) "نموذج محمّل" else "لا يوجد نموذج محمّل"}")
+                            val emergency = s.emergency ?: emptyMap()
+                            Text("الإيقاف الطارئ: ${if (emergency["kill_switch"] == true) "مفعّل" else "غير مفعّل"}")
+                            (emergency["last_reason"] as? String)?.takeIf { it.isNotBlank() }?.let {
+                                Text("آخر سبب: $it", style = MaterialTheme.typography.bodySmall)
+                            }
+                            ((s.schema ?: emptyMap())["current_version"])?.let {
+                                Text("إصدار المخطط: v$it", style = MaterialTheme.typography.bodySmall)
+                            }
                         } ?: Text("جاري التحميل…")
                     }
                 }
@@ -279,6 +292,33 @@ fun SystemScreen(vm: MainViewModel) {
                     Button(onClick = { vm.runTrainingCycle() }) { Text("تشغيل دورة") }
                     OutlinedButton(onClick = { vm.startTraining() }) { Text("تشغيل تلقائي") }
                     OutlinedButton(onClick = { vm.stopTraining() }) { Text("إيقاف") }
+                }
+            }
+            item {
+                Card(Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("الاستعادة والتحقق", fontWeight = FontWeight.Bold)
+                        latestBundle?.let { b ->
+                            Text("أحدث حزمة: ${b.id.take(8)}  •  schema v${b.schema_version ?: "?"}")
+                        } ?: Text("لا توجد حزم حالة حتى الآن")
+                        latestBundleVerification?.let { v ->
+                            Text("فحص أحدث حزمة: ${if (v.ok) "سليم" else "فيه مشاكل"}")
+                            if (!v.ok && v.problems.isNotEmpty()) {
+                                Text(v.problems.joinToString(" • "), style = MaterialTheme.typography.bodySmall)
+                            }
+                        }
+                        lastEmergencyBundle?.let { b ->
+                            Text("آخر حزمة طوارئ: ${b.id.take(8)}", style = MaterialTheme.typography.bodySmall)
+                        }
+                        lastEmergencyBundleVerification?.let { v ->
+                            Text("فحص حزمة الطوارئ: ${if (v.ok) "سليم" else "غير صالح"}", style = MaterialTheme.typography.bodySmall)
+                        }
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            OutlinedButton(onClick = { vm.verifyLatestBundle() }) { Text("فحص الأحدث") }
+                            OutlinedButton(onClick = { vm.verifyLastEmergencyBundle() }) { Text("فحص الطوارئ") }
+                            Button(onClick = { vm.importLastEmergencyBundle() }) { Text("استعادة الطوارئ") }
+                        }
+                    }
                 }
             }
             item { Text("النماذج", fontWeight = FontWeight.Bold) }
@@ -381,11 +421,12 @@ fun ApprovalCard(a: Approval, vm: MainViewModel) {
 fun ControlsScreen(vm: MainViewModel) {
     val controls by vm.controls.collectAsState()
     val memories by vm.memories.collectAsState()
+    val emergencyStatus by vm.emergencyStatus.collectAsState()
     val toast by vm.toast.collectAsState()
     val snackbar = remember { SnackbarHostState() }
     var newMemory by remember { mutableStateOf("") }
 
-    LaunchedEffect(Unit) { vm.loadControls(); vm.loadMemories() }
+    LaunchedEffect(Unit) { vm.loadControls(); vm.loadMemories(); vm.loadEmergencyStatus() }
     LaunchedEffect(toast) { toast?.let { snackbar.showSnackbar(it); vm.clearToast() } }
 
     Scaffold(
@@ -417,6 +458,24 @@ fun ControlsScreen(vm: MainViewModel) {
                 ) {
                     Text(label)
                     Switch(checked = value, onCheckedChange = { vm.setControl(key, it) })
+                }
+            }
+            item {
+                Spacer(Modifier.height(8.dp))
+                Text("الطوارئ والاستعادة", fontWeight = FontWeight.Bold)
+                val killSwitch = controls["kill_switch"] as? Boolean ?: false
+                val reason = emergencyStatus["last_emergency_stop_reason"]?.toString().orEmpty()
+                val bundleId = emergencyStatus["last_emergency_bundle_id"]?.toString().orEmpty()
+                Text(if (killSwitch) "الحالة: إيقاف طارئ مفعّل" else "الحالة: النظام يعمل بشكل طبيعي",
+                    color = if (killSwitch) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary)
+                if (reason.isNotBlank()) Text("السبب الأخير: $reason", style = MaterialTheme.typography.bodySmall)
+                if (bundleId.isNotBlank()) Text("آخر Bundle: ${bundleId.take(12)}", style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(
+                        onClick = { vm.emergencyStop() },
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                    ) { Text("إيقاف طارئ") }
+                    OutlinedButton(onClick = { vm.emergencyResume() }) { Text("رفع الإيقاف") }
                 }
             }
             item {

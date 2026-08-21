@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: omniai-backend
+    runtime: docker
+    plan: starter
+    dockerfilePath: ./backend/Dockerfile
+    autoDeploy: true
+    healthCheckPath: /healthz
+    envVars:
+      - key: OMNI_OWNER_TOKEN
+        sync: false

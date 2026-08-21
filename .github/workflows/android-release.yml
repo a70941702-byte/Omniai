@@ -1,0 +1,40 @@
+name: Android Release APK
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-release:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: android
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install SDK packages
+        run: |
+          sdkmanager --install 'platform-tools' 'platforms;android-35' 'build-tools;35.0.0'
+
+      - name: Build release APK
+        run: |
+          chmod +x gradlew BUILD_APK.sh
+          ./gradlew --no-daemon assembleRelease
+
+      - name: Upload release APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: omniai-release-apk
+          path: android/app/build/outputs/apk/release/app-release.apk
+          if-no-files-found: error

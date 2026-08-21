@@ -1,0 +1,34 @@
+{
+  "title": "OmniAI Overview",
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "panels": [
+    {
+      "type": "stat",
+      "title": "HTTP Requests Total",
+      "gridPos": {"x": 0, "y": 0, "w": 8, "h": 4},
+      "targets": [{"expr": "omniai_http_requests_total", "refId": "A"}]
+    },
+    {
+      "type": "stat",
+      "title": "P95 Latency (s)",
+      "gridPos": {"x": 8, "y": 0, "w": 8, "h": 4},
+      "targets": [{"expr": "omniai_http_latency_p95_seconds", "refId": "A"}]
+    },
+    {
+      "type": "stat",
+      "title": "Active Sessions",
+      "gridPos": {"x": 16, "y": 0, "w": 8, "h": 4},
+      "targets": [{"expr": "omniai_active_sessions", "refId": "A"}]
+    },
+    {
+      "type": "timeseries",
+      "title": "Route Request Counters",
+      "gridPos": {"x": 0, "y": 4, "w": 24, "h": 8},
+      "targets": [{"expr": "sum by (method, path, status) (omniai_http_route_requests_total)", "refId": "A"}]
+    }
+  ],
+  "templating": {"list": []},
+  "time": {"from": "now-15m", "to": "now"}
+}

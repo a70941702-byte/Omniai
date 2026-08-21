@@ -18,7 +18,12 @@ android {
 
     buildTypes {
         release {
-            isMinifyEnabled = true
+            // Stable installable release for current project state.
+            // R8 shrinking is temporarily disabled until project-specific keep rules
+            // are fully tuned for all transitive AndroidX/Tink dependencies.
+            isMinifyEnabled = false
+            isShrinkResources = false
+            signingConfig = signingConfigs.getByName("debug")
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
         debug { isMinifyEnabled = false }
@@ -43,6 +48,7 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.7")
     implementation("androidx.navigation:navigation-compose:2.8.5")
     implementation("androidx.security:security-crypto:1.1.0-alpha06")
+    implementation("com.google.errorprone:error_prone_annotations:2.28.0")
 
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-tooling-preview")

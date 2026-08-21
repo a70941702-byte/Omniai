@@ -1,0 +1,37 @@
+name: Backend Load Test
+
+on:
+  workflow_dispatch:
+
+jobs:
+  load-test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+          cache-dependency-path: |
+            backend/requirements.txt
+            backend/requirements-llm.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Start backend and run load profile
+        env:
+          OMNI_OWNER_TOKEN: test-owner-token
+        run: |
+          uvicorn app.main:app --host 127.0.0.1 --port 8000 > /tmp/omniai-load.log 2>&1 &
+          SERVER_PID=$!
+          trap 'kill $SERVER_PID || true' EXIT
+          python scripts/load_profile.py --base-url http://127.0.0.1:8000 --owner-token test-owner-token --concurrency 8 --rounds 10

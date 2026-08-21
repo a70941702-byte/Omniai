@@ -150,21 +150,47 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun setControl(key: String, value: Any) = viewModelScope.launch {
         runCatching { repo.setControl(key, value) }
             .onSuccess { loadControls() }
-            .onFailure { _toast.value = "Error: ${it.message}" }
-    }
-
-    // ---- self-improvement ----
-    fun improveAnalyze() = viewModelScope.launch {
-        _toast.value = "جاري تحليل النظام…"
-        runCatching { repo.improveAnalyze() }
-            .onSuccess { _toast.value = "التحليل جاهز: ${it.keys.joinToString()}" }
             .onFailure { _toast.value = "خطأ: ${it.message}" }
     }
 
-    fun improvePropose() = viewModelScope.launch {
-        _toast.value = "جاري طلب المقترحات…"
-        runCatching { repo.improvePropose() }
-            .onSuccess { _toast.value = "المقترحات جاهزة — راجع شاشة الموافقات" }
+    private val _emergencyStatus = MutableStateFlow<Map<String, Any>>(emptyMap())
+    val emergencyStatus = _emergencyStatus.asStateFlow()
+    private val _latestBundle = MutableStateFlow<StateBundleSummary?>(null)
+    val latestBundle = _latestBundle.asStateFlow()
+    private val _latestBundleVerification = MutableStateFlow<StateBundleVerification?>(null)
+    val latestBundleVerification = _latestBundleVerification.asStateFlow()
+    private val _lastEmergencyBundle = MutableStateFlow<StateBundleSummary?>(null)
+    val lastEmergencyBundle = _lastEmergencyBundle.asStateFlow()
+    private val _lastEmergencyBundleVerification = MutableStateFlow<StateBundleVerification?>(null)
+    val lastEmergencyBundleVerification = _lastEmergencyBundleVerification.asStateFlow()
+
+    fun loadEmergencyStatus() = viewModelScope.launch {
+        runCatching { _emergencyStatus.value = repo.emergencyStatus() }
+    }
+
+    fun refreshBundles() = viewModelScope.launch {
+        runCatching { _latestBundle.value = repo.latestStateBundle() }
+        runCatching { _latestBundleVerification.value = repo.verifyLatestStateBundle() }
+        runCatching { _lastEmergencyBundle.value = repo.lastEmergencyStateBundle() }
+        runCatching { _lastEmergencyBundleVerification.value = repo.verifyLastEmergencyStateBundle() }
+    }
+
+    fun emergencyStop(reason: String = "إيقاف طارئ من تطبيق أندرويد") = viewModelScope.launch {
+        _toast.value = "جاري تنفيذ الإيقاف الطارئ…"
+        runCatching { repo.emergencyStop(reason, true) }
+            .onSuccess {
+                _toast.value = if (it.bundle != null) "تم الإيقاف الطارئ وحفظ حالة النظام" else "تم الإيقاف الطارئ"
+                loadControls(); loadEmergencyStatus(); refreshSystem(); refreshBundles()
+            }
+            .onFailure { _toast.value = "خطأ: ${it.message}" }
+    }
+
+    fun emergencyResume() = viewModelScope.launch {
+        runCatching { repo.emergencyResume() }
+            .onSuccess {
+                _toast.value = it.note ?: "تم رفع الإيقاف الطارئ"
+                loadControls(); loadEmergencyStatus(); refreshSystem(); refreshBundles()
+            }
             .onFailure { _toast.value = "خطأ: ${it.message}" }
     }
 
@@ -174,6 +200,30 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun loadMemories() = viewModelScope.launch {
         runCatching { _memories.value = repo.memories() }
+    }
+
+    fun importLastEmergencyBundle() = viewModelScope.launch {
+        val bundle = _lastEmergencyBundle.value ?: run {
+            _toast.value = "لا توجد حزمة طوارئ للاستعادة"
+            return@launch
+        }
+        _toast.value = "جاري التحقق ثم الاستعادة…"
+        runCatching { repo.importVerifiedStateBundle(bundle.id) }
+            .onSuccess {
+                _toast.value = it.note ?: if (it.applied) "تمت الاستعادة" else "تم التحقق"
+                refreshBundles(); loadEmergencyStatus(); refreshSystem(); loadControls()
+            }
+            .onFailure { _toast.value = "خطأ: ${it.message}" }
+    }
+
+    fun verifyLastEmergencyBundle() = viewModelScope.launch {
+        runCatching { _lastEmergencyBundleVerification.value = repo.verifyLastEmergencyStateBundle() }
+            .onFailure { _toast.value = "خطأ: ${it.message}" }
+    }
+
+    fun verifyLatestBundle() = viewModelScope.launch {
+        runCatching { _latestBundleVerification.value = repo.verifyLatestStateBundle() }
+            .onFailure { _toast.value = "خطأ: ${it.message}" }
     }
 
     fun addMemory(text: String) = viewModelScope.launch {
