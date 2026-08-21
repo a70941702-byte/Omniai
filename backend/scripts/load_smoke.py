@@ -10,19 +10,31 @@ import httpx
 
 
 def one_request(client: httpx.Client, base_url: str, token: str, i: int) -> float:
-    t0 = time.perf_counter()
-    r = client.post(
-        f"{base_url}/api/v1/chat",
-        headers={"Authorization": f"Bearer {token}"},
-        json={"text": f"compute {i} + {i}"},
-        timeout=30.0,
-    )
-    r.raise_for_status()
-    body = r.json()
-    expected = str(i + i)
-    if expected not in body.get("answer", ""):
-        raise RuntimeError(f"unexpected answer for {i}: {body}")
-    return time.perf_counter() - t0
+    last_error: Exception | None = None
+    for attempt in range(3):
+        t0 = time.perf_counter()
+        try:
+            r = client.post(
+                f"{base_url}/api/v1/chat",
+                headers={"Authorization": f"Bearer {token}"},
+                json={"text": f"compute {i} + {i}"},
+                timeout=30.0,
+            )
+            if r.status_code >= 500:
+                raise httpx.HTTPStatusError("server error", request=r.request, response=r)
+            r.raise_for_status()
+            body = r.json()
+            expected = str(i + i)
+            if expected not in body.get("answer", ""):
+                raise RuntimeError(f"unexpected answer for {i}: {body}")
+            return time.perf_counter() - t0
+        except (httpx.HTTPError, httpx.TransportError, RuntimeError) as exc:
+            last_error = exc
+            if attempt == 2:
+                raise
+            time.sleep(0.5 * (attempt + 1))
+    assert last_error is not None
+    raise last_error
 
 
 def main() -> int:
@@ -47,6 +59,14 @@ def main() -> int:
         )
         login.raise_for_status()
         session_token = login.json()["token"]
+
+        warmup = client.post(
+            f"{args.base_url}/api/v1/chat",
+            headers={"Authorization": f"Bearer {session_token}"},
+            json={"text": "compute 1 + 1"},
+            timeout=30.0,
+        )
+        warmup.raise_for_status()
 
         with ThreadPoolExecutor(max_workers=args.concurrency) as ex:
             futures = [ex.submit(one_request, client, args.base_url, session_token, i) for i in range(1, args.requests + 1)]
