@@ -8,18 +8,34 @@ import time
 import httpx
 
 
+async def post_chat_with_retry(client: httpx.AsyncClient, base_url: str, token: str, idx: int) -> float:
+    last_error: Exception | None = None
+    for attempt in range(3):
+        t0 = time.perf_counter()
+        try:
+            r = await client.post(
+                f"{base_url}/api/v1/chat",
+                headers={"Authorization": f"Bearer {token}"},
+                json={"text": f"compute {idx} + {idx}"},
+                timeout=30.0,
+            )
+            if r.status_code >= 500:
+                raise httpx.HTTPStatusError("server error", request=r.request, response=r)
+            r.raise_for_status()
+            return time.perf_counter() - t0
+        except (httpx.HTTPError, httpx.TransportError) as exc:
+            last_error = exc
+            if attempt == 2:
+                raise
+            await asyncio.sleep(0.5 * (attempt + 1))
+    assert last_error is not None
+    raise last_error
+
+
 async def worker(client: httpx.AsyncClient, base_url: str, token: str, idx: int, rounds: int) -> list[float]:
     latencies = []
     for i in range(rounds):
-        t0 = time.perf_counter()
-        r = await client.post(
-            f"{base_url}/api/v1/chat",
-            headers={"Authorization": f"Bearer {token}"},
-            json={"text": f"compute {idx + i} + {idx + i}"},
-            timeout=30.0,
-        )
-        r.raise_for_status()
-        latencies.append(time.perf_counter() - t0)
+        latencies.append(await post_chat_with_retry(client, base_url, token, idx + i))
     return latencies
 
 
@@ -41,6 +57,14 @@ async def main() -> int:
         )
         login.raise_for_status()
         token = login.json()["token"]
+
+        warmup = await client.post(
+            f"{args.base_url}/api/v1/chat",
+            headers={"Authorization": f"Bearer {token}"},
+            json={"text": "compute 1 + 1"},
+            timeout=30.0,
+        )
+        warmup.raise_for_status()
 
         tasks = [worker(client, args.base_url, token, n * 1000, args.rounds) for n in range(args.concurrency)]
         batches = await asyncio.gather(*tasks)

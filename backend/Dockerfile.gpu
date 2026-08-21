@@ -19,9 +19,9 @@ RUN pip install --upgrade pip \
 
 COPY app ./app
 COPY tests ./tests
-COPY checkpoints ./checkpoints
 COPY scripts/start_gpu_server.sh ./scripts/start_gpu_server.sh
-RUN chmod +x ./scripts/start_gpu_server.sh
+RUN mkdir -p ./checkpoints ./data \
+    && chmod +x ./scripts/start_gpu_server.sh
 
 EXPOSE 8000
 
